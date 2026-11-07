@@ -13,6 +13,39 @@ def _ref_line(idx: int, ev: Dict[str, Any]) -> str:
     return f"[{idx}] {authors} ({year}). {ev.get('title', 'Untitled')}. {url}".strip()
 
 
+def parse_markdown(content: str):
+    """Yields (kind, text): kind is 'h1'|'h2'|'h3'|'bullet'|'para'. Line-based, so a heading
+    directly followed by text or bullets (no blank line) keeps all of its content."""
+    para: List[str] = []
+
+    def flush():
+        if para:
+            text = " ".join(para).strip()
+            para.clear()
+            return [("para", text)] if text else []
+        return []
+
+    for raw in content.splitlines():
+        line = raw.strip()
+        h = re.match(r"^(#{1,3})\s+(.*)", line)
+        b = re.match(r"^[-*\u2022]\s+(.*)", line)
+        if not line:
+            yield from flush()
+        elif h:
+            yield from flush()
+            yield (f"h{len(h.group(1))}", h.group(2))
+        elif b:
+            yield from flush()
+            yield ("bullet", b.group(1))
+        else:
+            para.append(line)
+    yield from flush()
+
+
+def _strip_md(text: str) -> str:
+    return re.sub(r"\*\*(.+?)\*\*|\*(.+?)\*", lambda m: m.group(1) or m.group(2), text)
+
+
 def to_markdown(title: str, content: str, evidence: List[Dict[str, Any]]) -> bytes:
     refs = "\n".join(_ref_line(i, e) for i, e in enumerate(evidence, 1))
     return f"# {title}\n\n{content}\n\n## References\n{refs}\n".encode("utf-8")
@@ -53,13 +86,14 @@ def to_docx(title: str, content: str, evidence: List[Dict[str, Any]]) -> bytes:
 
     doc = Document()
     doc.add_heading(title, level=0)
-    for block in re.split(r"\n{2,}", content.strip()):
-        block = block.strip()
-        m = re.match(r"^(#{1,3})\s+(.*)", block)
-        if m:
-            doc.add_heading(m.group(2), level=len(m.group(1)))
+    for kind, text in parse_markdown(content):
+        text = _strip_md(text)
+        if kind.startswith("h"):
+            doc.add_heading(text, level=int(kind[1]))
+        elif kind == "bullet":
+            doc.add_paragraph(text, style="List Bullet")
         else:
-            doc.add_paragraph(block)
+            doc.add_paragraph(text)
     if evidence:
         doc.add_heading("References", level=1)
         for i, e in enumerate(evidence, 1):
@@ -77,10 +111,14 @@ def to_pdf(title: str, content: str, evidence: List[Dict[str, Any]]) -> bytes:
     styles = getSampleStyleSheet()
     esc = lambda t: html.escape(t).replace("\n", "<br/>")  # reportlab paragraphs use XML-ish markup
     story = [Paragraph(esc(title), styles["Title"]), Spacer(1, 12)]
-    for block in re.split(r"\n{2,}", content.strip()):
-        block = block.strip()
-        m = re.match(r"^(#{1,3})\s+(.*)", block)
-        story.append(Paragraph(esc(m.group(2)), styles["Heading2"]) if m else Paragraph(esc(block), styles["BodyText"]))
+    for kind, text in parse_markdown(content):
+        text = esc(_strip_md(text))
+        if kind.startswith("h"):
+            story.append(Paragraph(text, styles["Heading2"]))
+        elif kind == "bullet":
+            story.append(Paragraph(text, styles["BodyText"], bulletText="\u2022"))
+        else:
+            story.append(Paragraph(text, styles["BodyText"]))
         story.append(Spacer(1, 6))
     if evidence:
         story.append(Paragraph("References", styles["Heading2"]))

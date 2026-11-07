@@ -91,3 +91,18 @@ def test_health_and_cors(client):
     assert client.get("/api/health").json()["status"] == "healthy"
     r = client.options("/api/chat", headers={"Origin": "http://evil.example", "Access-Control-Request-Method": "POST"})
     assert "access-control-allow-origin" not in r.headers
+
+
+def test_export_keeps_text_directly_after_headings_and_bullets(client):
+    content = "## Executive Summary\nFirst paragraph UNIQUEPARA1.\n\nSecond paragraph.\n\n## Key Findings\n- Bullet UNIQUEBUL1 **bold**\n- Bullet UNIQUEBUL2"
+    payload = {"title": "T", "content": content, "evidence": []}
+    from backend.services import exporter
+    kinds = [k for k, _ in exporter.parse_markdown(content)]
+    assert kinds == ["h2", "para", "para", "h2", "bullet", "bullet"]
+    import docx, pypdf
+    d = docx.Document(io.BytesIO(client.post("/api/export", json={**payload, "format": "docx"}).content))
+    text = "\n".join(p.text for p in d.paragraphs)
+    assert "UNIQUEPARA1" in text and "UNIQUEBUL1" in text and "UNIQUEBUL2" in text and "**" not in text
+    pdf = pypdf.PdfReader(io.BytesIO(client.post("/api/export", json={**payload, "format": "pdf"}).content))
+    ptext = "".join(p.extract_text() for p in pdf.pages)
+    assert "UNIQUEPARA1" in ptext and "UNIQUEBUL2" in ptext
