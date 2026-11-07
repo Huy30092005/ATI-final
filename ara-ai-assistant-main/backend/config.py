@@ -33,12 +33,12 @@ class Settings(BaseSettings):
     MAX_UPLOAD_MB: int = 10
 
     # OpenAI Settings
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")  
+    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")  
     OPENAI_MODEL: str = "gpt-4o-mini"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
 
     # MongoDB Atlas Vector Search
-    MONGODB_URI: str = os.getenv("MONGODB_URI")
+    MONGODB_URI: Optional[str] = os.getenv("MONGODB_URI")
     MONGODB_DB_NAME: str = "ara_research_db"
     MONGODB_COLLECTION: str = "document_embeddings"
     MONGODB_INDEX_NAME: str = "vector_index"
